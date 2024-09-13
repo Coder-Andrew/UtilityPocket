@@ -1,0 +1,10 @@
+{
+  "Name": "Utility Pocket",
+  "Author": "ModderDrew",
+  "Version": "1.0.0",
+  "Description": "A quick use slot for food items",
+  "UniqueID": "ModderDrew.UtilityPocket",
+  "EntryDll": "UtilityPocket.dll",
+  "MinimumApiVersion": "4.0.0",
+  "UpdateKeys": [ "Nexus:27666" ]
+}
