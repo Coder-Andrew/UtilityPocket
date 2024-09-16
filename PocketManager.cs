@@ -20,13 +20,13 @@ namespace UtilityPocket
             Logger = logger;
         }
 
-        public void StoreItemInPocket(Item currentItem)
+        public void StoreItemInPocket(Item item)
         {
             try
             {
-                if (currentItem != null && !isItemPocketed && !(currentItem is Tool))
+                if (item != null && !isItemPocketed && !(item is Tool))
                 {
-                    pocketedItem = currentItem;
+                    pocketedItem = item;
                     isItemPocketed = true;
                 }
 
