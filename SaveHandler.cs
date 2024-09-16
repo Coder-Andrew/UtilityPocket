@@ -38,17 +38,19 @@ namespace UtilityPocket
                 PlayerPockets playersPockets = Helper.Data.ReadJsonFile<PlayerPockets>(Path.Join("assets", "data.json"))
                     ?? new PlayerPockets { pocketDatas = new List<PocketData>() };
 
-
                 // Find the current player's pocket data
-                PocketData playerPocketData = playersPockets.pocketDatas.Find(p => p.PlayerUniqueID == pocketData.PlayerUniqueID)
-                    ?? new PocketData { PlayerUniqueID = pocketData.PlayerUniqueID };
+                PocketData? playerPocketData = playersPockets.pocketDatas.Find(p => p.PlayerUniqueID == pocketData.PlayerUniqueID);
 
-                // If no item is found in the player's pocket, return
-                if (string.IsNullOrEmpty(pocketData.QualifiedItemId)) return;
-
-                pocketData.QualifiedItemId = pocketData.QualifiedItemId;
-                pocketData.Quality = pocketData.Quality;
-                pocketData.Quantity = pocketData.Quantity;
+                if (playerPocketData != null)
+                {
+                    playerPocketData.PlayerUniqueID = pocketData.PlayerUniqueID;
+                    playerPocketData.QualifiedItemId = pocketData.QualifiedItemId;
+                    playerPocketData.Quality = pocketData.Quality;
+                }
+                else
+                {
+                    playersPockets.pocketDatas.Add(pocketData);
+                }
 
                 Helper.Data.WriteJsonFile(Path.Join("assets", "data.json"), playersPockets);
             }
