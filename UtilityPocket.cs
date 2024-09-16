@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Data;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using StardewModdingAPI;
@@ -14,6 +15,8 @@ namespace FoodPocket
     {
         public SButton UsePocketedItemKey { get; set; } = SButton.Q;
         public SButton PocketActiveItemKey { get; set; } = SButton.R;
+        public SButton? UsePocketedItemModiferKey { get; set; } = null;
+        public SButton? PocketActiveItemModiferKey { get; set; } = null;
         public int EnergyCost { get; set; } = 6;
     }
     public class PocketData
@@ -32,9 +35,11 @@ namespace FoodPocket
     {
         private Texture2D? customHud;
         private Item? pocketItem;
+        private Item? tempPocketItem; // Used for swapping out items to trigger tool usage
         private bool isItemPocketed = false;
-        private ModConfig Config;
+        private ModConfig? Config;
         private PocketData pocketData = new PocketData();
+        private bool usePocketedItemModifierKeyHeld = false;
         //private PlayerPockets playerPockets = new PlayerPockets();
 
         public override void Entry(IModHelper helper)
@@ -44,8 +49,17 @@ namespace FoodPocket
             helper.Events.GameLoop.SaveLoaded += this.OnLoading;
             //helper.Events.GameLoop.DayStarted += this.OnDayStarted;
             helper.Events.Input.ButtonPressed += this.OnButtonPressed;
+            helper.Events.Input.ButtonReleased += this.OnButtonReleased;
             helper.Events.Content.AssetRequested += this.OnAssetRequested;
             helper.Events.Display.RenderedHud += this.OnRenderingHud;
+        }
+
+        private void OnButtonReleased(object? sender, ButtonReleasedEventArgs e)
+        {
+            if (Config.UsePocketedItemModiferKey is not null && e.Button == Config.UsePocketedItemModiferKey)
+            {
+                usePocketedItemModifierKeyHeld = false;
+            }
         }
 
         private void OnLoading(object? sender, SaveLoadedEventArgs e)
@@ -184,6 +198,11 @@ namespace FoodPocket
         {
             if (!Context.IsWorldReady) return;
 
+            if (Config.UsePocketedItemModiferKey is not null && e.Button == Config.UsePocketedItemModiferKey)
+            {
+                usePocketedItemModifierKeyHeld = true;
+            }
+
             if (e.Button == Config.UsePocketedItemKey)
             {
                 // Use item
@@ -191,21 +210,23 @@ namespace FoodPocket
 
                 if (pocketItem == null || !isItemPocketed) return;
 
-                if (pocketItem is StardewValley.Tools.MeleeWeapon weapon)
-                {
 
-                    LogMessage($"test");
-                }
-                else if (pocketItem is Tool tool)
+                if (pocketItem is Tool tool)
                 {
                     LogMessage($"Using tool {tool.Name}");
 
+                    // swap out active items to trick game into using animation
+                    tempPocketItem = Game1.player.ActiveItem;
+                    Game1.player.removeItemFromInventory(tempPocketItem);
+                    //Game1.player.addItemToInventory()
 
-                    var player = Game1.player;
 
-                    tool.DoFunction(player.currentLocation, (int)player.GetToolLocation().X, (int)player.GetToolLocation().Y, 0, player);
-                    ToolAnimation(player);
-                    player.Stamina -= Config.EnergyCost;
+
+                    //var player = Game1.player;
+
+                    //tool.DoFunction(player.currentLocation, (int)player.GetToolLocation().X, (int)player.GetToolLocation().Y, 0, player);
+                    //ToolAnimation(player);
+                    //player.Stamina -= Config.EnergyCost;
 
                 }
                 else if (pocketItem is StardewValley.Object obj && obj.Edibility > -300)
@@ -246,6 +267,7 @@ namespace FoodPocket
                 else if (Game1.player.isInventoryFull())
                 {
                     Game1.showRedMessage("Inventory is full", true);
+                    Game1.player.playNearbySoundLocal("cancel");
                 }
             }
         }
@@ -269,7 +291,7 @@ namespace FoodPocket
 
         private void LogMessage(string message)
         {
-            this.Monitor.Log(message, LogLevel.Trace);
+            this.Monitor.Log(message, LogLevel.Debug);
         }
     }
 }
