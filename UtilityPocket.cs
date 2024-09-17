@@ -17,15 +17,15 @@ namespace FoodPocket
     {
         public SButton UsePocketedItemKey { get; set; } = SButton.Q;
         public SButton PocketActiveItemKey { get; set; } = SButton.R;
-        public SButton? UsePocketedItemModiferKey { get; set; } = null;
-        public SButton? PocketActiveItemModiferKey { get; set; } = null;
+        public SButton? UsePocketedItemModifierKey { get; set; } = null;
+        public SButton? PocketActiveItemModifierKey { get; set; } = null;
         public int EnergyCost { get; set; } = 6;
     }
 
     internal sealed class ModEntry : Mod
     {
         private Texture2D? customHud;
-        private ModConfig? Config;
+        private ModConfig Config;
         private bool usePocketedItemModifierKeyHeld = false;
         private PocketManager pocketManager;
         private SaveHandler saveHandler;
@@ -51,33 +51,9 @@ namespace FoodPocket
             helper.Events.Display.RenderedHud += this.OnRenderingHud;
         }
 
-        private void OnButtonReleased(object? sender, ButtonReleasedEventArgs e)
-        {
-            if (Config!.UsePocketedItemModiferKey is not null && e.Button == Config.UsePocketedItemModiferKey)
-            {
-                usePocketedItemModifierKeyHeld = false;
-            }
-        }
-
-        private void OnLoading(object? sender, SaveLoadedEventArgs e)
-        {
-            PocketData userPocketData = saveHandler!.LoadPocketData(Game1.player.uniqueMultiplayerID.ToString());
-            
-            if (string.IsNullOrEmpty(userPocketData.QualifiedItemId)) return;
-
-            Item loadedItem = ItemRegistry.Create(
-                itemId: userPocketData.QualifiedItemId,
-                quality: userPocketData.Quality,
-                amount: userPocketData.Quantity
-            );
-
-            pocketManager!.StoreItemInPocket(loadedItem);
-        }
-
-
         private void OnSaving(object? sender, SavedEventArgs e)
         {
-            Item? item = pocketManager!.GetPocketedItem();
+            Item? item = pocketManager.GetPocketedItem();
             PocketData pocketData = new PocketData
             {
                 PlayerUniqueID = Game1.player.uniqueMultiplayerID.ToString(),
@@ -86,10 +62,77 @@ namespace FoodPocket
                 Quantity = item?.Stack ?? 0
             };
 
+            LogMessage("Loading " + pocketData.ToString());
+
             saveHandler!.SavePocketData(pocketData);
         }
+        private void OnLoading(object? sender, SaveLoadedEventArgs e)
+        {
+            PocketData userPocketData = saveHandler.LoadPocketData(Game1.player.uniqueMultiplayerID.ToString());
+            LogMessage(userPocketData.ToString());
+
+            if (string.IsNullOrEmpty(userPocketData.QualifiedItemId)) return;
+
+            Item loadedItem = ItemRegistry.Create(
+                itemId: userPocketData.QualifiedItemId,
+                quality: userPocketData.Quality,
+                amount: userPocketData.Quantity
+            );
+
+            pocketManager.StoreItemInPocket(loadedItem);
+        }
+        private void OnButtonReleased(object? sender, ButtonReleasedEventArgs e)
+        {
+            if (!(Config!.UsePocketedItemModifierKey is null) && (e.Button == Config.UsePocketedItemModifierKey))
+            {
+                LogMessage($"Player released {e.Button}");
+                usePocketedItemModifierKeyHeld = false;
+            }
+        }
+
+        private void OnButtonPressed(object? sender, ButtonPressedEventArgs e)
+        {
+            if (!Context.IsWorldReady || !Context.IsPlayerFree) return;
+
+            Item? activeItem = Game1.player.ActiveItem;
+
+            if (!(Config.UsePocketedItemModifierKey is null) && (e.Button == Config.UsePocketedItemModifierKey))
+            {
+                usePocketedItemModifierKeyHeld = true;
+            }
 
 
+            if (e.Button == Config!.UsePocketedItemKey && pocketManager.IsItemPocketed())
+            {
+                pocketManager.UsePocketedItem(Game1.player);
+            }
+            if (e.Button == Config.PocketActiveItemKey)
+            {
+                if (pocketManager!.IsItemPocketed())
+                {
+                    pocketManager.RemoveItemFromPocket(Game1.player);
+                }
+                else if (activeItem != null && !(activeItem is Tool))
+                {
+                    pocketManager.StoreItemInPocket(activeItem);
+                    Game1.player.removeItemFromInventory(activeItem);
+                }
+            }
+        }
+
+        private void OnAssetRequested(object? sender, AssetRequestedEventArgs e)
+        {
+            if (e.Name.IsEquivalentTo(Path.Join("assets", "UtilityPocketHUD.png")))
+            {
+                e.LoadFromModFile<Texture2D>(Path.Join("assets", "UtilityPocketHUD.png"), AssetLoadPriority.Medium);
+            }
+
+            if (customHud == null && Context.IsWorldReady)
+            {
+                LogMessage("Loading HUD...");
+                customHud = Helper.ModContent.Load<Texture2D>(Path.Join("assets", "UtilityPocketHUD.png"));
+            }
+        }
 
         private void OnRenderingHud(object? sender, RenderedHudEventArgs e)
         {
@@ -114,9 +157,9 @@ namespace FoodPocket
                     0f
                 );
 
-                if (pocketManager!.IsItemPocketed())
+                if (pocketManager.IsItemPocketed())
                 {
-                    ParsedItemData pid = ItemRegistry.GetData(pocketManager.GetPocketedItem()!.ItemId);
+                    ParsedItemData pid = ItemRegistry.GetData(pocketManager.GetPocketedItem().ItemId);
                     Texture2D pocketItemTexture = pid.GetTexture();
                     Rectangle rec = pid.GetSourceRect();
 
@@ -136,53 +179,13 @@ namespace FoodPocket
 
                     e.SpriteBatch.DrawString(
                         Game1.smallFont,
-                        pocketManager!.GetPocketedItem()!.Stack.ToString(),
+                        pocketManager.GetPocketedItem()!.Stack.ToString(),
                         new Vector2(hudPosition.X + hudWidth, hudPosition.Y + hudHeight - 30),
                         Color.White
-                    );                    
-                }
-            }
-
-        }
-
-        private void OnAssetRequested(object? sender, AssetRequestedEventArgs e)
-        {
-            if (e.Name.IsEquivalentTo(Path.Join("assets", "UtilityPocketHUD.png")))
-            {
-                e.LoadFromModFile<Texture2D>(Path.Join("assets", "UtilityPocketHUD.png"), AssetLoadPriority.Medium);
-            }
-
-            if (customHud == null && Context.IsWorldReady)
-            {
-                LogMessage("Loading HUD...");
-                customHud = Helper.ModContent.Load<Texture2D>(Path.Join("assets", "UtilityPocketHUD.png"));
-            }
-        }
-
-        private void OnButtonPressed(object? sender, ButtonPressedEventArgs e)
-        {
-            if (!Context.IsWorldReady) return;
-
-            Item? activeItem = Game1.player.ActiveItem;
-
-            if (e.Button == Config!.UsePocketedItemKey && pocketManager!.IsItemPocketed())
-            {
-                
-            }
-            if (e.Button == Config.PocketActiveItemKey)
-            {
-                if (pocketManager!.IsItemPocketed())
-                {
-                    pocketManager.RemoveItemFromPocket(Game1.player);
-                }
-                else if (activeItem != null && !(activeItem is Tool))
-                {
-                    pocketManager.StoreItemInPocket(activeItem);
-                    Game1.player.removeItemFromInventory(activeItem);
+                    );
                 }
             }
         }
-
 
         private void LogMessage(string message)
         {

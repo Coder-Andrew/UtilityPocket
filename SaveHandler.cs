@@ -15,6 +15,11 @@ namespace UtilityPocket
         public string QualifiedItemId { get; set; } = "";
         public int Quality { get; set; }
         public int Quantity { get; set; }
+
+        public override string ToString()
+        {
+            return $"{PlayerUniqueID} --- {QualifiedItemId} --- {Quality} --- {Quantity}";
+        }
     }
     public class PlayerPockets
     {
@@ -46,6 +51,7 @@ namespace UtilityPocket
                     playerPocketData.PlayerUniqueID = pocketData.PlayerUniqueID;
                     playerPocketData.QualifiedItemId = pocketData.QualifiedItemId;
                     playerPocketData.Quality = pocketData.Quality;
+                    playerPocketData.Quantity = pocketData.Quantity;
                 }
                 else
                 {
