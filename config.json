@@ -1,6 +1,6 @@
 {
   "UsePocketedItemKey": "Q",
   "PocketActiveItemKey": "R",
-  "UsePocketedItemModiferKey": "LeftShift",
+  "UsePocketedItemModifierKey": "LeftShift",
   "EnergyCost": 6
 }

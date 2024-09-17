@@ -26,7 +26,8 @@ namespace FoodPocket
     {
         private Texture2D? customHud;
         private ModConfig Config;
-        private bool usePocketedItemModifierKeyHeld = false;
+        private bool usePocketedItemModifierKeyHeld = true;
+        private bool pocketActiveItemModifierKeyHeld = true;
         private PocketManager pocketManager;
         private SaveHandler saveHandler;
         private IModHelper helper;
@@ -37,8 +38,9 @@ namespace FoodPocket
             pocketManager = new PocketManager(this.Monitor);
             saveHandler = new SaveHandler(helper, this.Monitor);
             this.helper = helper;
-
+           
             SetupEvents();
+            SetupModifierKeys();
         }
 
         private void SetupEvents()
@@ -49,6 +51,12 @@ namespace FoodPocket
             helper.Events.Input.ButtonReleased += this.OnButtonReleased;
             helper.Events.Content.AssetRequested += this.OnAssetRequested;
             helper.Events.Display.RenderedHud += this.OnRenderingHud;
+        }
+
+        private void SetupModifierKeys()
+        {
+            if (Config.UsePocketedItemModifierKey is not null)  usePocketedItemModifierKeyHeld = false;
+            if (Config.PocketActiveItemModifierKey is not null) pocketActiveItemModifierKeyHeld = false;
         }
 
         private void OnSaving(object? sender, SavedEventArgs e)
@@ -83,10 +91,16 @@ namespace FoodPocket
         }
         private void OnButtonReleased(object? sender, ButtonReleasedEventArgs e)
         {
-            if (!(Config!.UsePocketedItemModifierKey is null) && (e.Button == Config.UsePocketedItemModifierKey))
+            if (e.Button == Config.UsePocketedItemModifierKey) //(!(Config.UsePocketedItemModifierKey is null) && (e.Button == Config.UsePocketedItemModifierKey))
             {
                 LogMessage($"Player released {e.Button}");
                 usePocketedItemModifierKeyHeld = false;
+            }
+        
+            if (e.Button == Config.PocketActiveItemModifierKey) //(!(Config.PocketActiveItemModifierKey is null) && (e.Button == Config.PocketActiveItemModifierKey))
+            {
+                LogMessage($"Player released {e.Button}");
+                pocketActiveItemModifierKeyHeld = false;
             }
         }
 
@@ -98,15 +112,21 @@ namespace FoodPocket
 
             if (!(Config.UsePocketedItemModifierKey is null) && (e.Button == Config.UsePocketedItemModifierKey))
             {
+                LogMessage($"Player pressed {e.Button}");
                 usePocketedItemModifierKeyHeld = true;
             }
 
+            if (!(Config.PocketActiveItemModifierKey is null) && (e.Button == Config.PocketActiveItemModifierKey))
+            {
+                LogMessage($"Player pressed {e.Button}");
+                pocketActiveItemModifierKeyHeld = true;
+            }
 
-            if (e.Button == Config!.UsePocketedItemKey && pocketManager.IsItemPocketed())
+            if (e.Button == Config!.UsePocketedItemKey && pocketManager.IsItemPocketed() && usePocketedItemModifierKeyHeld)
             {
                 pocketManager.UsePocketedItem(Game1.player);
             }
-            if (e.Button == Config.PocketActiveItemKey)
+            if (e.Button == Config.PocketActiveItemKey && pocketActiveItemModifierKeyHeld)
             {
                 if (pocketManager!.IsItemPocketed())
                 {
@@ -189,7 +209,7 @@ namespace FoodPocket
 
         private void LogMessage(string message)
         {
-            this.Monitor.Log(message, LogLevel.Debug);
+            this.Monitor.Log(message, LogLevel.Trace);
         }
     }
 }
