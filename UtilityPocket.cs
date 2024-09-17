@@ -1,12 +1,15 @@
 ﻿using System;
+using System.Data;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewModdingAPI.Utilities;
 using StardewValley;
+using StardewValley.GameData;
 using StardewValley.ItemTypeDefinitions;
 using StardewValley.Tools;
+using UtilityPocket;
 
 namespace FoodPocket
 {
@@ -14,100 +17,142 @@ namespace FoodPocket
     {
         public SButton UsePocketedItemKey { get; set; } = SButton.Q;
         public SButton PocketActiveItemKey { get; set; } = SButton.R;
+        public SButton? UsePocketedItemModifierKey { get; set; } = null;
+        public SButton? PocketActiveItemModifierKey { get; set; } = null;
         public int EnergyCost { get; set; } = 6;
-    }
-    public class PocketData
-    {
-        public string PlayerUniqueID { get; set; } = "";
-        public string QualifiedItemId { get; set; } = "";
-        public int Quality { get; set; }
-        public int Quantity { get; set; }
-    }
-    public class PlayerPockets
-    {
-        public List<PocketData> pocketDatas { get; set; } = new List<PocketData>();
     }
 
     internal sealed class ModEntry : Mod
     {
         private Texture2D? customHud;
-        private Item? pocketItem;
-        private bool isItemPocketed = false;
         private ModConfig Config;
-        private PocketData pocketData = new PocketData();
-        //private PlayerPockets playerPockets = new PlayerPockets();
+        private bool usePocketedItemModifierKeyHeld = true;
+        private bool pocketActiveItemModifierKeyHeld = true;
+        private PocketManager pocketManager;
+        private SaveHandler saveHandler;
+        private IModHelper helper;
 
         public override void Entry(IModHelper helper)
         {
             Config = helper.ReadConfig<ModConfig>();
+            pocketManager = new PocketManager(this.Monitor);
+            saveHandler = new SaveHandler(helper, this.Monitor);
+            this.helper = helper;
+           
+            SetupEvents();
+            SetupModifierKeys();
+        }
+
+        private void SetupEvents()
+        {
             helper.Events.GameLoop.Saved += this.OnSaving;
             helper.Events.GameLoop.SaveLoaded += this.OnLoading;
-            //helper.Events.GameLoop.DayStarted += this.OnDayStarted;
             helper.Events.Input.ButtonPressed += this.OnButtonPressed;
+            helper.Events.Input.ButtonReleased += this.OnButtonReleased;
             helper.Events.Content.AssetRequested += this.OnAssetRequested;
             helper.Events.Display.RenderedHud += this.OnRenderingHud;
         }
 
-        private void OnLoading(object? sender, SaveLoadedEventArgs e)
+        private void SetupModifierKeys()
         {
-            pocketItem = null;
-            isItemPocketed = false;
-
-            // Load the entire player pockets data
-            PlayerPockets playersPockets = this.Helper.Data.ReadJsonFile<PlayerPockets>(Path.Join("assets", "data.json"))
-                ?? new PlayerPockets { pocketDatas = new List<PocketData>() };
-
-            string playerID = Game1.player.UniqueMultiplayerID.ToString();
-
-            // Find the current player's pocket data
-            pocketData = playersPockets.pocketDatas.Find(p => p.PlayerUniqueID == playerID)
-                ?? new PocketData { PlayerUniqueID = playerID };
-
-            // If no item is found in the player's pocket, return
-            if (string.IsNullOrEmpty(pocketData.QualifiedItemId)) return;
-
-            // Load the pocketed item
-            pocketItem = ItemRegistry.Create(pocketData.QualifiedItemId, pocketData.Quantity, quality: pocketData.Quality);
-            isItemPocketed = true;
-
-            LogMessage($"Loading {pocketItem.Stack.ToString()}x {pocketItem.Name} from data.json from player with ID {pocketData.PlayerUniqueID}");
+            if (Config.UsePocketedItemModifierKey is not null)  usePocketedItemModifierKeyHeld = false;
+            if (Config.PocketActiveItemModifierKey is not null) pocketActiveItemModifierKeyHeld = false;
         }
-
 
         private void OnSaving(object? sender, SavedEventArgs e)
         {
-            // Load the entire player pockets data, ensuring we keep all players' data intact
-            PlayerPockets playersPockets = this.Helper.Data.ReadJsonFile<PlayerPockets>(Path.Join("assets", "data.json")) ?? new PlayerPockets();
-
-            string playerID = Game1.player.UniqueMultiplayerID.ToString();
-
-            // Find existing data for the current player
-            PocketData? existingPocketData = playersPockets.pocketDatas.Find(p => p.PlayerUniqueID == playerID);
-
-            if (existingPocketData != null)
+            Item? item = pocketManager.GetPocketedItem();
+            PocketData pocketData = new PocketData
             {
-                // Update existing player's pocket data
-                existingPocketData.QualifiedItemId = pocketItem?.QualifiedItemId ?? "";
-                existingPocketData.Quantity = pocketItem?.Stack ?? 0;
-                existingPocketData.Quality = pocketItem?.Quality ?? 0;
-            }
-            else
-            {
-                // Add new data if no existing data is found for this player
-                playersPockets.pocketDatas.Add(new PocketData
-                {
-                    PlayerUniqueID = playerID,
-                    QualifiedItemId = pocketItem?.QualifiedItemId ?? "",
-                    Quantity = pocketItem?.Stack ?? 0,
-                    Quality = pocketItem?.Quality ?? 0
-                });
-            }
+                PlayerUniqueID = Game1.player.uniqueMultiplayerID.ToString(),
+                QualifiedItemId = item?.ItemId ?? "",
+                Quality = item?.Quality ?? 0,
+                Quantity = item?.Stack ?? 0
+            };
 
-            // Save the entire player pockets data, which now includes the updated data for the current player
-            this.Helper.Data.WriteJsonFile(Path.Join("assets", "data.json"), playersPockets);
+            LogMessage("Loading " + pocketData.ToString());
+
+            saveHandler!.SavePocketData(pocketData);
+        }
+        private void OnLoading(object? sender, SaveLoadedEventArgs e)
+        {
+            PocketData userPocketData = saveHandler.LoadPocketData(Game1.player.uniqueMultiplayerID.ToString());
+            LogMessage(userPocketData.ToString());
+
+            if (string.IsNullOrEmpty(userPocketData.QualifiedItemId)) return;
+
+            Item loadedItem = ItemRegistry.Create(
+                itemId: userPocketData.QualifiedItemId,
+                quality: userPocketData.Quality,
+                amount: userPocketData.Quantity
+            );
+
+            pocketManager.StoreItemInPocket(loadedItem);
+        }
+        private void OnButtonReleased(object? sender, ButtonReleasedEventArgs e)
+        {
+            if (e.Button == Config.UsePocketedItemModifierKey) //(!(Config.UsePocketedItemModifierKey is null) && (e.Button == Config.UsePocketedItemModifierKey))
+            {
+                LogMessage($"Player released {e.Button}");
+                usePocketedItemModifierKeyHeld = false;
+            }
+        
+            if (e.Button == Config.PocketActiveItemModifierKey) //(!(Config.PocketActiveItemModifierKey is null) && (e.Button == Config.PocketActiveItemModifierKey))
+            {
+                LogMessage($"Player released {e.Button}");
+                pocketActiveItemModifierKeyHeld = false;
+            }
         }
 
+        private void OnButtonPressed(object? sender, ButtonPressedEventArgs e)
+        {
+            if (!Context.IsWorldReady || !Context.IsPlayerFree) return;
 
+            Item? activeItem = Game1.player.ActiveItem;
+
+            if (!(Config.UsePocketedItemModifierKey is null) && (e.Button == Config.UsePocketedItemModifierKey))
+            {
+                LogMessage($"Player pressed {e.Button}");
+                usePocketedItemModifierKeyHeld = true;
+            }
+
+            if (!(Config.PocketActiveItemModifierKey is null) && (e.Button == Config.PocketActiveItemModifierKey))
+            {
+                LogMessage($"Player pressed {e.Button}");
+                pocketActiveItemModifierKeyHeld = true;
+            }
+
+            if (e.Button == Config!.UsePocketedItemKey && pocketManager.IsItemPocketed() && usePocketedItemModifierKeyHeld)
+            {
+                pocketManager.UsePocketedItem(Game1.player);
+            }
+            if (e.Button == Config.PocketActiveItemKey && pocketActiveItemModifierKeyHeld)
+            {
+                if (pocketManager!.IsItemPocketed())
+                {
+                    pocketManager.RemoveItemFromPocket(Game1.player);
+                }
+                else if (activeItem != null && !(activeItem is Tool))
+                {
+                    pocketManager.StoreItemInPocket(activeItem);
+                    Game1.player.removeItemFromInventory(activeItem);
+                }
+            }
+        }
+
+        private void OnAssetRequested(object? sender, AssetRequestedEventArgs e)
+        {
+            if (e.Name.IsEquivalentTo(Path.Join("assets", "UtilityPocketHUD.png")))
+            {
+                e.LoadFromModFile<Texture2D>(Path.Join("assets", "UtilityPocketHUD.png"), AssetLoadPriority.Medium);
+            }
+
+            if (customHud == null && Context.IsWorldReady)
+            {
+                LogMessage("Loading HUD...");
+                customHud = Helper.ModContent.Load<Texture2D>(Path.Join("assets", "UtilityPocketHUD.png"));
+            }
+        }
 
         private void OnRenderingHud(object? sender, RenderedHudEventArgs e)
         {
@@ -132,9 +177,9 @@ namespace FoodPocket
                     0f
                 );
 
-                if (isItemPocketed && pocketItem != null)
+                if (pocketManager.IsItemPocketed())
                 {
-                    ParsedItemData pid = ItemRegistry.GetData(pocketItem.QualifiedItemId);
+                    ParsedItemData pid = ItemRegistry.GetData(pocketManager.GetPocketedItem().ItemId);
                     Texture2D pocketItemTexture = pid.GetTexture();
                     Rectangle rec = pid.GetSourceRect();
 
@@ -152,119 +197,14 @@ namespace FoodPocket
                         0f
                     );
 
-                    if (pocketItem is StardewValley.Object)
-                    {
-                        e.SpriteBatch.DrawString(
-                            Game1.smallFont,
-                            pocketItem.Stack.ToString(),
-                            new Vector2(hudPosition.X + hudWidth, hudPosition.Y + hudHeight - 30),
-                            Color.White
-                        );
-                    }
+                    e.SpriteBatch.DrawString(
+                        Game1.smallFont,
+                        pocketManager.GetPocketedItem()!.Stack.ToString(),
+                        new Vector2(hudPosition.X + hudWidth, hudPosition.Y + hudHeight - 30),
+                        Color.White
+                    );
                 }
             }
-
-        }
-
-        private void OnAssetRequested(object? sender, AssetRequestedEventArgs e)
-        {
-            if (e.Name.IsEquivalentTo(Path.Join("assets", "UtilityPocketHUD.png")))
-            {
-                e.LoadFromModFile<Texture2D>(Path.Join("assets", "UtilityPocketHUD.png"), AssetLoadPriority.Medium);
-            }
-
-            if (customHud == null && Context.IsWorldReady)
-            {
-                LogMessage("Loading HUD...");
-                customHud = Helper.ModContent.Load<Texture2D>(Path.Join("assets", "UtilityPocketHUD.png"));
-            }
-        }
-
-        private void OnButtonPressed(object? sender, ButtonPressedEventArgs e)
-        {
-            if (!Context.IsWorldReady) return;
-
-            if (e.Button == Config.UsePocketedItemKey)
-            {
-                // Use item
-                LogMessage("Begin using tool process");
-
-                if (pocketItem == null || !isItemPocketed) return;
-
-                if (pocketItem is StardewValley.Tools.MeleeWeapon weapon)
-                {
-
-                    LogMessage($"test");
-                }
-                else if (pocketItem is Tool tool)
-                {
-                    LogMessage($"Using tool {tool.Name}");
-
-
-                    var player = Game1.player;
-
-                    tool.DoFunction(player.currentLocation, (int)player.GetToolLocation().X, (int)player.GetToolLocation().Y, 0, player);
-                    ToolAnimation(player);
-                    player.Stamina -= Config.EnergyCost;
-
-                }
-                else if (pocketItem is StardewValley.Object obj && obj.Edibility > -300)
-                {
-                    if (pocketItem.Stack == 1)
-                    {
-                        LogMessage($"Eating last {pocketItem.Name}");
-                        Game1.player.eatObject(obj);
-                        pocketItem = null;
-                    }
-                    else if (pocketItem.Stack > 1)
-                    {
-                        LogMessage($"Eating {pocketItem.Name} --- {pocketItem.Stack.ToString()} left");
-                        Game1.player.eatObject(obj);
-                        pocketItem.Stack--;
-                    }
-                }
-            }
-            else if (e.Button == Config.PocketActiveItemKey)
-            {
-                // Store item in pocket
-                Item currentItem = Game1.player.CurrentItem;
-
-                if (currentItem != null && !isItemPocketed && currentItem is not StardewValley.Tool)
-                {
-                    LogMessage($"Storing {currentItem.Name} in pocket");
-                    pocketItem = currentItem;
-                    Game1.player.removeItemFromInventory(currentItem);
-                    isItemPocketed = true;
-                }
-                else if (!Game1.player.isInventoryFull() && pocketItem != null)
-                {
-                    LogMessage($"Removing {pocketItem.Name} from pocket");
-                    Game1.player.addItemToInventory(pocketItem);
-                    pocketItem = null;
-                    isItemPocketed = false;
-                }
-                else if (Game1.player.isInventoryFull())
-                {
-                    Game1.showRedMessage("Inventory is full", true);
-                }
-            }
-        }
-
-        private void ToolAnimation(Farmer player)
-        {
-            player.playNearbySoundLocal("swordswipe");
-            int animationNumber = player.FacingDirection switch
-            {
-                0 => 276,
-                1 => 274,
-                2 => 277,
-                3 => 278,
-                _ => 0
-            };
-            player.animateOnce(animationNumber);
-
-            //player.FarmerSprite.animateOnce(animationNumber, 6000, 20);
-            //Game1.freezeControls
         }
 
         private void LogMessage(string message)
