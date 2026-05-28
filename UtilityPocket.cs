@@ -206,56 +206,61 @@ namespace FoodPocket
 
         private void OnRenderingHud(object? sender, RenderedHudEventArgs e)
         {
-            if (customHud != null)
-            {
-                int screenWidth = Game1.uiViewport.Width;
-                int screenHeight = Game1.uiViewport.Height;
-                int hudWidth = customHud.Width;
-                int hudHeight = customHud.Height;
+            if (customHud == null) return;
 
-                Vector2 hudPosition = new Vector2(10, screenHeight - hudHeight - 10);
+            if (Game1.game1.takingMapScreenshot)
+                return;
+
+            if (Game1.eventUp || Game1.CurrentEvent is not null)
+                return;
+
+            int screenWidth = Game1.uiViewport.Width;
+            int screenHeight = Game1.uiViewport.Height;
+            int hudWidth = customHud.Width;
+            int hudHeight = customHud.Height;
+
+            Vector2 hudPosition = new Vector2(10, screenHeight - hudHeight - 10);
+
+            e.SpriteBatch.Draw(
+                customHud,
+                hudPosition,
+                null,
+                Color.White,
+                0f,
+                Vector2.Zero,
+                1f,
+                SpriteEffects.None,
+                0f
+            );
+
+            if (pocketManager.IsItemPocketed())
+            {
+                ParsedItemData pid = ItemRegistry.GetData(pocketManager.GetPocketedItem().QualifiedItemId);
+                Texture2D pocketItemTexture = pid.GetTexture();
+                Rectangle rec = pid.GetSourceRect();
+
+                Vector2 drawPosition = new Vector2(hudPosition.X + 7, hudPosition.Y + 8);
 
                 e.SpriteBatch.Draw(
-                    customHud,
-                    hudPosition,
-                    null,
+                    pocketItemTexture,
+                    drawPosition,
+                    rec,
                     Color.White,
                     0f,
                     Vector2.Zero,
-                    1f,
+                    3f,
                     SpriteEffects.None,
                     0f
                 );
 
-                if (pocketManager.IsItemPocketed())
+                if (pocketManager.GetPocketedItem() is not Tool)
                 {
-                    ParsedItemData pid = ItemRegistry.GetData(pocketManager.GetPocketedItem().QualifiedItemId);
-                    Texture2D pocketItemTexture = pid.GetTexture();
-                    Rectangle rec = pid.GetSourceRect();
-
-                    Vector2 drawPosition = new Vector2(hudPosition.X + 7, hudPosition.Y + 8);
-
-                    e.SpriteBatch.Draw(
-                        pocketItemTexture,
-                        drawPosition,
-                        rec,
-                        Color.White,
-                        0f,
-                        Vector2.Zero,
-                        3f,
-                        SpriteEffects.None,
-                        0f
+                    e.SpriteBatch.DrawString(
+                        Game1.smallFont,
+                        pocketManager.GetPocketedItem()!.Stack.ToString(),
+                        new Vector2(hudPosition.X + hudWidth, hudPosition.Y + hudHeight - 30),
+                        Color.White
                     );
-
-                    if (pocketManager.GetPocketedItem() is not Tool)
-                    {
-                        e.SpriteBatch.DrawString(
-                            Game1.smallFont,
-                            pocketManager.GetPocketedItem()!.Stack.ToString(),
-                            new Vector2(hudPosition.X + hudWidth, hudPosition.Y + hudHeight - 30),
-                            Color.White
-                        );
-                    }
                 }
             }
         }

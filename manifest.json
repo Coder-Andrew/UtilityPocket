@@ -1,7 +1,7 @@
 {
   "Name": "Utility Pocket",
   "Author": "ModderDrew",
-  "Version": "2.0.0",
+  "Version": "2.0.3",
   "Description": "A quick use slot for food and tools",
   "UniqueID": "ModderDrew.UtilityPocket",
   "EntryDll": "UtilityPocket.dll",
