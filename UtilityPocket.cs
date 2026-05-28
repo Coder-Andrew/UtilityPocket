@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Data;
+using HarmonyLib;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using StardewModdingAPI;
@@ -24,6 +25,14 @@ namespace FoodPocket
 
     internal sealed class ModEntry : Mod
     {
+        /* 
+         * LEFT OFF TRYING TO FIX SAVE FUNCTIONALITY
+         * ISSUE WHEN SAVING AND LOADING POCKETED ITEM
+         * POCKETED ITEM PERSISTS ACROSS SAVES
+         */
+
+
+        internal static IMonitor ModMonitor;
         private Texture2D? customHud;
         private ModConfig Config;
         private bool usePocketedItemModifierKeyHeld = true;
@@ -31,6 +40,10 @@ namespace FoodPocket
         private PocketManager pocketManager;
         private SaveHandler saveHandler;
         private IModHelper helper;
+
+        private bool usePocketedItemKeyPressed = false;
+        private Tool oldTool;
+        private bool isUsingTool = false;
 
         public override void Entry(IModHelper helper)
         {
@@ -41,6 +54,17 @@ namespace FoodPocket
            
             SetupEvents();
             SetupModifierKeys();
+
+            Harmony harmony = new Harmony(ModManifest.UniqueID);
+            ////harmony.Patch(
+            ////    original: AccessTools.Method(typeof(Farmer), nameof(Farmer.GetItemReceiveBehavior)),
+            ////    postfix: new HarmonyMethod(typeof(ModEntry), nameof(GetItemReceiveBehavior_PostFix))
+            ////);
+            harmony.Patch(
+                original: AccessTools.Method(typeof(Game1), "checkIsMissingTool"),
+                postfix: new HarmonyMethod(typeof(ModEntry), nameof(checkIsMissingTool_PostFix))
+            );
+
         }
 
         private void SetupEvents()
@@ -51,7 +75,29 @@ namespace FoodPocket
             helper.Events.Input.ButtonReleased += this.OnButtonReleased;
             helper.Events.Content.AssetRequested += this.OnAssetRequested;
             helper.Events.Display.RenderedHud += this.OnRenderingHud;
+            helper.Events.GameLoop.UpdateTicked += this.OnUpdateTicked;
         }
+
+
+        private void OnUpdateTicked(object? sender, UpdateTickedEventArgs e)
+        {
+            if (pocketManager.GetPocketedItem() is not Tool) return;
+
+            bool usingTool = Game1.player.UsingTool;
+
+            if (!usingTool && usePocketedItemKeyPressed && !isUsingTool)
+            {
+                isUsingTool = true;
+                pocketManager.BeginUsingPocketedTool(Game1.player);
+            }
+            else if (!usingTool && isUsingTool)
+            {
+                isUsingTool = false;
+                pocketManager.EndUsingPocketedTool(Game1.player);
+            }
+            usePocketedItemKeyPressed = false;
+        }
+
 
         private void SetupModifierKeys()
         {
@@ -65,7 +111,7 @@ namespace FoodPocket
             PocketData pocketData = new PocketData
             {
                 PlayerUniqueID = Game1.player.uniqueMultiplayerID.ToString(),
-                QualifiedItemId = item?.ItemId ?? "",
+                QualifiedItemId = item?.QualifiedItemId ?? "",
                 Quality = item?.Quality ?? 0,
                 Quantity = item?.Stack ?? 0
             };
@@ -76,6 +122,7 @@ namespace FoodPocket
         }
         private void OnLoading(object? sender, SaveLoadedEventArgs e)
         {
+            pocketManager.ClearPocketedItem();
             PocketData userPocketData = saveHandler.LoadPocketData(Game1.player.uniqueMultiplayerID.ToString());
             LogMessage(userPocketData.ToString());
 
@@ -102,6 +149,7 @@ namespace FoodPocket
                 LogMessage($"Player released {e.Button}");
                 pocketActiveItemModifierKeyHeld = false;
             }
+
         }
 
         private void OnButtonPressed(object? sender, ButtonPressedEventArgs e)
@@ -125,6 +173,8 @@ namespace FoodPocket
             if (e.Button == Config!.UsePocketedItemKey && pocketManager.IsItemPocketed() && usePocketedItemModifierKeyHeld)
             {
                 pocketManager.UsePocketedItem(Game1.player);
+
+                if (pocketManager.GetPocketedItem() is Tool) usePocketedItemKeyPressed = true;
             }
             if (e.Button == Config.PocketActiveItemKey && pocketActiveItemModifierKeyHeld)
             {
@@ -132,7 +182,7 @@ namespace FoodPocket
                 {
                     pocketManager.RemoveItemFromPocket(Game1.player);
                 }
-                else if (activeItem != null && !(activeItem is Tool))
+                else if (activeItem != null)// && !(activeItem is Tool))
                 {
                     pocketManager.StoreItemInPocket(activeItem);
                     Game1.player.removeItemFromInventory(activeItem);
@@ -179,7 +229,7 @@ namespace FoodPocket
 
                 if (pocketManager.IsItemPocketed())
                 {
-                    ParsedItemData pid = ItemRegistry.GetData(pocketManager.GetPocketedItem().ItemId);
+                    ParsedItemData pid = ItemRegistry.GetData(pocketManager.GetPocketedItem().QualifiedItemId);
                     Texture2D pocketItemTexture = pid.GetTexture();
                     Rectangle rec = pid.GetSourceRect();
 
@@ -197,13 +247,49 @@ namespace FoodPocket
                         0f
                     );
 
-                    e.SpriteBatch.DrawString(
-                        Game1.smallFont,
-                        pocketManager.GetPocketedItem()!.Stack.ToString(),
-                        new Vector2(hudPosition.X + hudWidth, hudPosition.Y + hudHeight - 30),
-                        Color.White
-                    );
+                    if (pocketManager.GetPocketedItem() is not Tool)
+                    {
+                        e.SpriteBatch.DrawString(
+                            Game1.smallFont,
+                            pocketManager.GetPocketedItem()!.Stack.ToString(),
+                            new Vector2(hudPosition.X + hudWidth, hudPosition.Y + hudHeight - 30),
+                            Color.White
+                        );
+                    }
                 }
+            }
+        }
+
+        public static void GetItemReceiveBehavior_PostFix(Item item, out bool needsInventorySpace, out bool showNotification)
+        {
+            showNotification = true;
+            needsInventorySpace = true;
+            try
+            {
+                if (item is Tool)
+                {
+                    showNotification = false;
+                }
+            }
+            catch (Exception e)
+            {
+                ModMonitor.Log($"Error in GetItemReceiveBehavior_PostFix: {e.Message}", LogLevel.Error);
+            }
+        }
+
+        public static void checkIsMissingTool_PostFix(Dictionary<Type, int> missingTools, ref int missingScythes, Item item)
+        {
+            try
+            {
+                foreach (Type key in missingTools.Keys)
+                {
+                    missingTools[key] = 0;
+                }
+                missingScythes = 0;
+            }
+            catch (Exception e)
+            {
+                ModMonitor.Log($"Error in checkIsMissingTool_PostFix: {e.Message}", LogLevel.Error);
             }
         }
 

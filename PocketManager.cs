@@ -1,9 +1,11 @@
 ﻿using StardewModdingAPI;
 using StardewValley;
+using StardewValley.GameData.Tools;
 using StardewValley.Logging;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -15,6 +17,10 @@ namespace UtilityPocket
         private bool isItemPocketed = false;
         private IMonitor Logger;
 
+        private bool isUsingTool = false;
+        private int oldToolIndex;
+        private Item oldItem;
+
         public PocketManager(IMonitor logger)
         {
             Logger = logger;
@@ -24,7 +30,7 @@ namespace UtilityPocket
         {
             try
             {
-                if (item != null && !IsItemPocketed() && !(item is Tool))
+                if (item != null && !IsItemPocketed()) //&& !(item is Tool))
                 {
                     pocketedItem = item;
                     isItemPocketed = true;
@@ -75,6 +81,12 @@ namespace UtilityPocket
             }
         }
 
+        public void ClearPocketedItem()
+        {
+            pocketedItem = null;
+            isItemPocketed = false;
+        }
+
         public bool IsItemPocketed()
         {
             return isItemPocketed;
@@ -97,6 +109,25 @@ namespace UtilityPocket
                 pocketedItem = null;
                 isItemPocketed = false;
             }
+        }
+
+        public void BeginUsingPocketedTool(Farmer who)
+        {
+            if (!isItemPocketed || (pocketedItem is not Tool)) return;
+
+            oldToolIndex = who.CurrentToolIndex;           
+
+            who.CurrentToolIndex = 999;
+
+            who.CurrentTool = pocketedItem as Tool;
+            who.BeginUsingTool();
+        }
+
+        public void EndUsingPocketedTool(Farmer who)
+        {
+            if (!isItemPocketed || (pocketedItem is not Tool)) return;
+         
+            who.CurrentToolIndex = oldToolIndex;
         }
     }
 }
